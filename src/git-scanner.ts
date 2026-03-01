@@ -179,9 +179,14 @@ async function scanContentAsFile(content: string, filePath: string, options: Sca
   const tmpDir = os.tmpdir();
   const tmpFile = pathMod.join(tmpDir, `secretvet-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 
+  // Respect entropy option: exclude generic (entropy-based) rules when disabled
+  const rules = options.entropy === false
+    ? ALL_RULES.filter(r => r.category !== 'generic')
+    : ALL_RULES;
+
   try {
     fs.writeFileSync(tmpFile, content, 'utf-8');
-    const { findings } = await scanFile(tmpFile, ALL_RULES, options);
+    const { findings } = await scanFile(tmpFile, rules, options);
     // Fix file path to show original path
     return findings.map(f => ({ ...f, file: filePath }));
   } finally {

@@ -122,4 +122,19 @@ describe('Scanner - Options', () => {
     assert.ok(result.duration >= 0, 'Should have duration');
     assert.ok(result.version, 'Should have version');
   });
+
+  test('should exclude generic/entropy rules when entropy=false', async () => {
+    const withEntropy = await scan(TRUE_POS_DIR, { entropy: true });
+    const withoutEntropy = await scan(TRUE_POS_DIR, { entropy: false });
+
+    const genericWithEntropy = withEntropy.findings.filter(f => f.category === 'generic');
+    const genericWithoutEntropy = withoutEntropy.findings.filter(f => f.category === 'generic');
+
+    assert.strictEqual(genericWithoutEntropy.length, 0, 'Should have no generic findings when entropy=false');
+    // With entropy enabled, generic rules may or may not fire depending on content
+    assert.ok(
+      genericWithEntropy.length >= genericWithoutEntropy.length,
+      'Should have at least as many generic findings with entropy=true as with entropy=false'
+    );
+  });
 });

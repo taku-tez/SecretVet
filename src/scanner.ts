@@ -177,9 +177,13 @@ export async function scan(targetPath: string, options: ScanOptions = {}): Promi
   const ignoreFile = options.ignoreFile ?? path.join(process.cwd(), '.secretvetignore');
   ignorePatterns.push(...loadIgnorePatterns(ignoreFile));
 
-  // Filter rules by severity
+  // Filter rules by severity and entropy option
   const minSev = options.minSeverity ? SEVERITY_ORDER[options.minSeverity] : 0;
-  const rules = ALL_RULES.filter(r => SEVERITY_ORDER[r.severity] >= minSev);
+  const rules = ALL_RULES.filter(r => {
+    if (SEVERITY_ORDER[r.severity] < minSev) return false;
+    if (options.entropy === false && r.category === 'generic') return false;
+    return true;
+  });
 
   // Collect files
   const stat = fs.statSync(targetPath);
