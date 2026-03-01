@@ -6,5 +6,8 @@ export { loadBaseline, saveBaseline, createBaseline, filterBaselineFindings, upd
 export { installHook, uninstallHook } from './hook.js';
 export { verifyFinding, verifyFindings, canVerify } from './verifier.js';
 export type { VerifyResult } from './verifier.js';
+export { scanRemote, isRemoteUrl } from './remote-scanner.js';
+export { loadConfig, buildCustomRules, buildAllowlistMatcher } from './config.js';
+export type { SecretVetConfig, RuleConfig, AllowlistConfig } from './config.js';
 export type { SecretRule, SecretFinding, ScanResult, ScanOptions, Severity } from './types.js';
 export { shannonEntropy } from './rules/generic.js';

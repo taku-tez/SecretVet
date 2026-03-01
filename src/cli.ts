@@ -1,7 +1,9 @@
 import { scan } from './scanner.js';
 import { scanGitHistory, scanStagedFiles } from './git-scanner.js';
+import { scanRemote, isRemoteUrl } from './remote-scanner.js';
 import { formatOutput, formatGitText } from './reporter.js';
 import { verifyFindings, canVerify } from './verifier.js';
+import { loadConfig, mergeConfigWithOptions } from './config.js';
 import { ALL_RULES, CATEGORIES } from './rules/index.js';
 import {
   loadBaseline, saveBaseline, createBaseline, filterBaselineFindings, updateBaseline,
@@ -32,13 +34,16 @@ Scan Options:
   --ignore <patterns>          Comma-separated ignore patterns
   --show-secrets               Show unmasked secret values
   --verify                     Verify if detected secrets are still active (requires --show-secrets)
+  --skip-tests                 Skip test/spec directories
   --no-entropy                 Disable entropy-based detection
   --git-history                Scan git commit history
   --since <date>               Scan commits since date (e.g. "2025-01-01")
   --until <date>               Scan commits until date
   --max-commits <n>            Max commits to scan in git history
   --staged                     Scan only staged files (pre-commit use)
+  --depth <n>                  Clone depth for remote repos (default: 1)
   --baseline [path]            Load baseline and only report new findings
+  --config <path>              Path to config file (default: .secretvetrc.json)
   --verbose                    Verbose output
 
 Categories: ${CATEGORIES.join(', ')}
@@ -92,6 +97,7 @@ async function runScan(target: string, flags: Record<string, string | boolean>):
     minSeverity: flags['min-severity'] as Severity | undefined,
     ignore: flags['ignore'] ? String(flags['ignore']).split(',') : undefined,
     showSecrets: flags['show-secrets'] === true,
+    skipTests: flags['skip-tests'] === true,
     entropy: flags['no-entropy'] !== true,
     verbose: flags['verbose'] === true,
   };
@@ -151,6 +157,17 @@ async function runScan(target: string, flags: Record<string, string | boolean>):
       }
 
       if (gitResult.summary.critical > 0 || gitResult.summary.high > 0) process.exit(1);
+      return;
+    }
+
+    // -- Remote scan
+    if (isRemoteUrl(target)) {
+      const result = await scanRemote(target, {
+        ...options,
+        depth: flags['depth'] ? Number(flags['depth']) : undefined,
+      });
+      process.stdout.write(formatOutput(result, format));
+      if (result.summary.critical > 0 || result.summary.high > 0) process.exit(1);
       return;
     }
 

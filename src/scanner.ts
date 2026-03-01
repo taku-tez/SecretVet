@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import * as readline from 'readline';
 import { ALL_RULES } from './rules/index.js';
+import { loadConfig, buildCustomRules, buildAllowlistMatcher, mergeConfigWithOptions } from './config.js';
 import type { SecretRule, SecretFinding, ScanResult, ScanOptions, Severity } from './types.js';
 
 const VERSION = '0.1.0';
@@ -171,6 +171,13 @@ export async function scan(targetPath: string, options: ScanOptions = {}): Promi
   const allFindings: SecretFinding[] = [];
   const errors: Array<{ file: string; error: string }> = [];
 
+  // Load config file
+  const config = loadConfig(process.cwd());
+  const allowlistMatcher = buildAllowlistMatcher(config);
+  const customRules = buildCustomRules(config);
+  const disabledRules = new Set(config?.extend?.disableRules ?? []);
+  const skipTests = options.skipTests ?? config?.config?.skipTests ?? false;
+
   // Build ignore list
   const ignoreSegments = [...DEFAULT_IGNORE, ...(options.ignore ?? [])];
   const ignorePatterns: string[] = [];
@@ -179,7 +186,10 @@ export async function scan(targetPath: string, options: ScanOptions = {}): Promi
 
   // Filter rules by severity
   const minSev = options.minSeverity ? SEVERITY_ORDER[options.minSeverity] : 0;
-  const rules = ALL_RULES.filter(r => SEVERITY_ORDER[r.severity] >= minSev);
+  const baseRules = ALL_RULES
+    .filter(r => SEVERITY_ORDER[r.severity] >= minSev)
+    .filter(r => !disabledRules.has(r.id));
+  const rules = [...baseRules, ...customRules.filter(r => SEVERITY_ORDER[r.severity as Severity] >= minSev)];
 
   // Collect files
   const stat = fs.statSync(targetPath);
@@ -190,13 +200,31 @@ export async function scan(targetPath: string, options: ScanOptions = {}): Promi
   let filesScanned = 0;
   let filesSkipped = 0;
 
+  const TEST_PATH_RE = /(?:^|\/)(?:test|spec|__tests__|__mocks__|fixtures)\//i;
+
   for (const file of files) {
+    // Skip test files if configured
+    if (skipTests && TEST_PATH_RE.test(file.replace(/\\/g, '/'))) {
+      filesSkipped++;
+      continue;
+    }
+
+    // Allowlist: file-level
+    if (allowlistMatcher?.isFileAllowed(file)) {
+      filesSkipped++;
+      continue;
+    }
+
     const result = await scanFile(file, rules, options);
     if (result.error) {
       errors.push({ file, error: result.error });
       filesSkipped++;
     } else {
-      allFindings.push(...result.findings);
+      // Filter out allowlisted matches
+      const filtered = allowlistMatcher
+        ? result.findings.filter(f => !allowlistMatcher.isMatchAllowed(f.match))
+        : result.findings;
+      allFindings.push(...filtered);
       filesScanned++;
     }
   }

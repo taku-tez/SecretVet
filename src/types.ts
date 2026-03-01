@@ -54,6 +54,7 @@ export interface ScanOptions {
   minSeverity?: Severity;
   verbose?: boolean;
   showSecrets?: boolean;
+  skipTests?: boolean;
   entropy?: boolean;
   entropyThreshold?: number;
 }

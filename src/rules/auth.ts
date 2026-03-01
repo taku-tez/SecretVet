@@ -69,6 +69,9 @@ export const rules: SecretRule[] = [
     category: 'auth',
     pattern: /https?:\/\/[a-zA-Z0-9_\-]+:[^@\s'"]{6,}@[a-zA-Z0-9.\-]+/g,
     recommendation: 'Never embed credentials in URLs. Use environment variables or credential managers.',
-    falsePositiveFilter: (match) => /localhost|127\.0\.0\.1|example\.com|test\.com/i.test(match),
+    falsePositiveFilter: (match) =>
+      /localhost|127\.0\.0\.1|example\.com|test\.com/i.test(match)
+      || /\$\{[^}]+\}/.test(match)   // template literal ${token}@host
+      || /\$\([^)]+\)/.test(match),  // shell var $(token)@host
   },
 ];
