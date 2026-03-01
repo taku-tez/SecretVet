@@ -1,0 +1,34 @@
+{
+  "name": "@secretvet/cli",
+  "version": "0.1.0",
+  "description": "Secret and credential scanner for source code, git history, and CI/CD configs. Vet before you commit.",
+  "type": "module",
+  "bin": {
+    "secretvet": "bin/secretvet.js"
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "npm run typecheck && node --test --import tsx/esm test/scanner.test.ts test/entropy.test.ts test/rules.test.ts",
+    "typecheck": "tsc --noEmit",
+    "dev": "tsup --watch"
+  },
+  "keywords": [
+    "security",
+    "secrets",
+    "credentials",
+    "scanner",
+    "devops",
+    "sast"
+  ],
+  "author": "SecretVet Contributors",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsup": "^8.0.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
