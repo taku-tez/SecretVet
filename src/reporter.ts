@@ -163,6 +163,48 @@ export function formatSarif(result: ScanResult): string {
   return JSON.stringify(sarif, null, 2);
 }
 
+export function formatGitText(result: any): string {
+  const lines: string[] = [];
+  lines.push('');
+  lines.push(c.bold('🔐 SecretVet Git History Scan'));
+  lines.push('═'.repeat(52));
+  lines.push(`Repo:     ${result.repoPath}`);
+  lines.push(`Commits:  ${result.commitsScanned} scanned in ${result.duration}ms`);
+  lines.push(`Date:     ${result.timestamp}`);
+  lines.push('');
+
+  if (result.findings.length === 0) {
+    lines.push(c.green('✅ No secrets detected in git history!'));
+    lines.push('');
+  } else {
+    for (const f of result.findings as any[]) {
+      lines.push(`${ICONS[f.severity as Severity] ?? '⚪'} ${colorBySeverity(f.severity as Severity, c.bold(f.severity.toUpperCase()))} ${c.bold(f.ruleName)}`);
+      lines.push(`  ${c.gray('File:')}   ${f.file}:${f.line}`);
+      lines.push(`  ${c.gray('Commit:')} ${f.gitCommit} — ${f.gitMessage}`);
+      lines.push(`  ${c.gray('Author:')} ${f.gitAuthor} (${f.gitDate?.slice(0, 10)})`);
+      lines.push(`  ${c.gray('Match:')}  ${colorBySeverity(f.severity as Severity, f.match)}`);
+      lines.push(`  ${c.gray('→')} ${f.recommendation}`);
+      lines.push('');
+    }
+  }
+
+  const { critical = 0, high = 0, medium = 0, low = 0, info = 0, total = 0 } = result.summary ?? {};
+  lines.push('─'.repeat(52));
+  if (total === 0) {
+    lines.push(c.green(`📊 Summary: ${c.bold('0 findings')}`));
+  } else {
+    const parts = [];
+    if (critical) parts.push(c.red(`${critical} critical`));
+    if (high) parts.push(c.orange(`${high} high`));
+    if (medium) parts.push(c.yellow(`${medium} medium`));
+    if (low) parts.push(c.blue(`${low} low`));
+    if (info) parts.push(c.gray(`${info} info`));
+    lines.push(`📊 Summary: ${parts.join(', ')}`);
+  }
+  lines.push('');
+  return lines.join('\n');
+}
+
 export function formatOutput(result: ScanResult, format: 'text' | 'json' | 'sarif' = 'text'): string {
   switch (format) {
     case 'json': return formatJson(result);

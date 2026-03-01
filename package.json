@@ -8,7 +8,7 @@
   },
   "scripts": {
     "build": "tsup",
-    "test": "npm run typecheck && node --test --import tsx/esm test/scanner.test.ts test/entropy.test.ts test/rules.test.ts",
+    "test": "npm run typecheck && node --test --import tsx/esm test/scanner.test.ts test/entropy.test.ts test/rules.test.ts test/baseline.test.ts",
     "typecheck": "tsc --noEmit",
     "dev": "tsup --watch"
   },
