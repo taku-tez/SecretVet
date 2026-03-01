@@ -1,7 +1,7 @@
 import { scan } from './scanner.js';
 import { scanGitHistory, scanStagedFiles } from './git-scanner.js';
-import { formatOutput, formatText } from './reporter.js';
-import { formatGitText } from './reporter.js';
+import { formatOutput, formatGitText } from './reporter.js';
+import { verifyFindings, canVerify } from './verifier.js';
 import { ALL_RULES, CATEGORIES } from './rules/index.js';
 import {
   loadBaseline, saveBaseline, createBaseline, filterBaselineFindings, updateBaseline,
@@ -31,6 +31,7 @@ Scan Options:
   --min-severity <level>       Minimum severity: critical|high|medium|low|info
   --ignore <patterns>          Comma-separated ignore patterns
   --show-secrets               Show unmasked secret values
+  --verify                     Verify if detected secrets are still active (requires --show-secrets)
   --no-entropy                 Disable entropy-based detection
   --git-history                Scan git commit history
   --since <date>               Scan commits since date (e.g. "2025-01-01")
@@ -176,6 +177,22 @@ async function runScan(target: string, flags: Record<string, string | boolean>):
     }
 
     process.stdout.write(formatOutput(result, format));
+
+    // -- Optional verification
+    if (flags['verify'] === true && result.findings.length > 0) {
+      const verifiableFindings = result.findings.filter(f => canVerify(f.ruleId));
+      if (verifiableFindings.length > 0) {
+        console.log(`\n🔍 Verifying ${verifiableFindings.length} finding(s)...\n`);
+        const verifyResults = await verifyFindings(verifiableFindings);
+        for (const vr of verifyResults) {
+          const icon = vr.status === 'active' ? '🔴 ACTIVE' : vr.status === 'inactive' ? '✅ REVOKED' : '❓ UNKNOWN';
+          console.log(`  ${icon}  ${vr.ruleId} (${vr.file}:${vr.line})`);
+          console.log(`          ${vr.message}`);
+        }
+        console.log('');
+      }
+    }
+
     if (result.summary.critical > 0 || result.summary.high > 0) process.exit(1);
 
   } catch (err) {
