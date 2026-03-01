@@ -57,4 +57,5 @@ export interface ScanOptions {
   skipTests?: boolean;
   entropy?: boolean;
   entropyThreshold?: number;
+  workers?: number;
 }

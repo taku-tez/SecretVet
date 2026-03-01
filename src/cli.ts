@@ -3,6 +3,8 @@ import { scanGitHistory, scanStagedFiles } from './git-scanner.js';
 import { scanRemote, isRemoteUrl } from './remote-scanner.js';
 import { formatOutput, formatGitText } from './reporter.js';
 import { verifyFindings, canVerify } from './verifier.js';
+import { analyzeFindings, canAnalyze, formatAnalysisResult } from './analyzer.js';
+import { triage } from './revoker.js';
 import { loadConfig, mergeConfigWithOptions } from './config.js';
 import { ALL_RULES, CATEGORIES } from './rules/index.js';
 import {
@@ -34,6 +36,8 @@ Scan Options:
   --ignore <patterns>          Comma-separated ignore patterns
   --show-secrets               Show unmasked secret values
   --verify                     Verify if detected secrets are still active (requires --show-secrets)
+  --analyze                    Deep analysis: permissions, scopes, identity (requires --show-secrets)
+  --workers <n>                Number of parallel workers (default: CPU count)
   --skip-tests                 Skip test/spec directories
   --no-entropy                 Disable entropy-based detection
   --git-history                Scan git commit history
@@ -51,9 +55,12 @@ Categories: ${CATEGORIES.join(', ')}
 Examples:
   secretvet scan .
   secretvet scan ./src --format sarif
+  secretvet scan . --show-secrets --analyze
+  secretvet scan . --workers 8
   secretvet scan . --git-history --since "2025-01-01"
   secretvet scan . --staged
   secretvet scan . --baseline
+  secretvet triage
   secretvet baseline create
   secretvet install-hook
   secretvet rules list --category cloud
@@ -99,6 +106,7 @@ async function runScan(target: string, flags: Record<string, string | boolean>):
     showSecrets: flags['show-secrets'] === true,
     skipTests: flags['skip-tests'] === true,
     entropy: flags['no-entropy'] !== true,
+    workers: flags['workers'] ? Number(flags['workers']) : undefined,
     verbose: flags['verbose'] === true,
   };
 
@@ -210,6 +218,24 @@ async function runScan(target: string, flags: Record<string, string | boolean>):
       }
     }
 
+    // -- Deep analysis (permissions, scopes, identity)
+    if (flags['analyze'] === true && result.findings.length > 0) {
+      const analyzable = result.findings.filter(f => canAnalyze(f.ruleId));
+      if (analyzable.length > 0) {
+        console.log(`\n🔬 Analyzing ${analyzable.length} finding(s)...\n`);
+        const analysisResults = await analyzeFindings(analyzable, (r, i, total) => {
+          process.stderr.write(`  [${i}/${total}] ${r.provider}...\r`);
+        });
+        process.stderr.write('\n');
+        for (const r of analysisResults) {
+          console.log(formatAnalysisResult(r));
+          console.log('');
+        }
+      } else {
+        console.log('\nℹ️  No findings with available analyzers.\n');
+      }
+    }
+
     if (result.summary.critical > 0 || result.summary.high > 0) process.exit(1);
 
   } catch (err) {
@@ -303,6 +329,20 @@ async function main(): Promise<void> {
         console.error(`Unknown baseline subcommand: ${sub ?? '(none)'}`);
         console.error('Usage: secretvet baseline create|update [path]');
         process.exit(1);
+      }
+      break;
+    }
+    case 'triage': {
+      const triageTarget = args[0] ?? '.';
+      console.log(`🔐 SecretVet: Scanning ${triageTarget} for triage...`);
+      const triageResult = await scan(triageTarget, { showSecrets: flags['show-secrets'] === true });
+      if (triageResult.findings.length === 0) {
+        console.log('✅ No findings to triage.');
+      } else {
+        await triage(triageResult.findings, {
+          dryRun: flags['dry-run'] === true,
+          showSecrets: flags['show-secrets'] === true,
+        });
       }
       break;
     }
