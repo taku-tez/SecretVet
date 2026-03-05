@@ -123,3 +123,52 @@ describe('Scanner - Options', () => {
     assert.ok(result.version, 'Should have version');
   });
 });
+
+describe('Scanner - False Positive Reduction (Issue #10)', () => {
+  test('should downgrade severity for markdown code block findings to info', async () => {
+    const mdFile = path.join(FALSE_POS_DIR, 'docs-example.md');
+    const { findings } = await scanFile(mdFile, ALL_RULES, { showSecrets: true });
+    // Findings inside fenced code blocks should be severity=info
+    const fencedFindings = findings.filter(f => f.line >= 5 && f.line <= 7);
+    for (const f of fencedFindings) {
+      assert.strictEqual(f.severity, 'info', `Finding in markdown code block should be info, got ${f.severity} for ${f.ruleId} at line ${f.line}`);
+    }
+  });
+
+  test('should downgrade severity for indented code block in markdown', async () => {
+    const mdFile = path.join(FALSE_POS_DIR, 'docs-example.md');
+    const { findings } = await scanFile(mdFile, ALL_RULES, { showSecrets: true });
+    // The 4-space indented line is line 11
+    const indentedFindings = findings.filter(f => f.line === 11);
+    for (const f of indentedFindings) {
+      assert.strictEqual(f.severity, 'info', `Finding in indented code block should be info, got ${f.severity} for ${f.ruleId}`);
+    }
+  });
+
+  test('should downgrade severity for test directory files', async () => {
+    const testDir = path.join(FALSE_POS_DIR);
+    const result = await scan(testDir, { showSecrets: true });
+    // Findings from test/ subdirectory should have downgraded severity
+    const testFindings = result.findings.filter(f => f.file.includes('/test/'));
+    for (const f of testFindings) {
+      assert.ok(
+        f.severity !== 'critical',
+        `Test file finding should not be critical, got ${f.severity} for ${f.ruleId} in ${f.file}`
+      );
+    }
+  });
+
+  test('should skip git commit hashes with git context keywords', async () => {
+    const gitFile = path.join(FALSE_POS_DIR, 'git-hashes.sh');
+    const { findings } = await scanFile(gitFile, ALL_RULES, { showSecrets: true });
+    // Should not have findings matching the 40-char hex hashes
+    const hashFindings = findings.filter(f =>
+      f.match.includes('abcdef1234567890abcdef1234567890abcdef12')
+    );
+    assert.strictEqual(
+      hashFindings.length,
+      0,
+      `Should not flag git commit hashes, got ${hashFindings.length} findings: ${hashFindings.map(f => f.ruleId).join(', ')}`
+    );
+  });
+});
