@@ -20,6 +20,43 @@ const DEFAULT_IGNORE = [
   'venv', '.tox', 'target', 'pkg', '.cargo',
 ];
 
+const MARKDOWN_EXTENSIONS = new Set(['.md', '.mdx', '.rst']);
+
+const TEST_PATH_PATTERN = /(?:^|\/)(?:test|spec|__tests__|__mocks__|fixtures)\//i;
+const TEST_FILE_PATTERN = /\.(?:test|spec)\.[jt]sx?$/i;
+
+const GIT_HASH_CONTEXT_RE = /(?:checkout|cherry-pick|revert|commit|merge|sha:|sha1:|sha256:|ref:|refs\/|tree\s|parent\s|object\s)\s*[a-f0-9]{40}\b|\b[a-f0-9]{40}\b\s*(?:#\s*(?:commit|sha|ref))/i;
+
+const SEVERITY_DOWNGRADE: Record<Severity, Severity> = {
+  critical: 'high',
+  high: 'medium',
+  medium: 'low',
+  low: 'info',
+  info: 'info',
+};
+
+function isInsideMarkdownCodeBlock(content: string, offset: number): boolean {
+  const before = content.slice(0, offset);
+  // Check fenced code blocks (``` or ~~~)
+  const fencedOpens = (before.match(/^[ \t]*(?:`{3,}|~{3,})/gm) ?? []).length;
+  if (fencedOpens % 2 === 1) return true; // inside an unclosed fence
+
+  // Check 4-space / tab indented code block: the line containing the match
+  const lastNewline = before.lastIndexOf('\n');
+  const lineStart = lastNewline + 1;
+  const linePrefix = content.slice(lineStart, offset);
+  if (/^(?:    |\t)/.test(content.slice(lineStart))) return true;
+
+  return false;
+}
+
+function isGitCommitHash(match: string, lineContext: string): boolean {
+  // Only applies to 40-char lowercase hex strings
+  const hexMatch = match.match(/\b([a-f0-9]{40})\b/);
+  if (!hexMatch) return false;
+  return GIT_HASH_CONTEXT_RE.test(lineContext);
+}
+
 const BINARY_EXTENSIONS = new Set([
   '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.ico', '.svg',
   '.pdf', '.zip', '.tar', '.gz', '.bz2', '.xz', '.7z', '.rar',
@@ -101,15 +138,25 @@ export async function scanFile(
         // False positive filter
         if (rule.falsePositiveFilter?.(matchStr, lineContext)) continue;
 
+        // Filter: 40-char hex git commit hashes
+        if (isGitCommitHash(matchStr, lineContext)) continue;
+
         const maskedMatch = options.showSecrets ? matchStr : maskSecret(matchStr);
         const context = getContextLines(lines, lineIndex);
+
+        // Severity downgrade for markdown code blocks
+        const ext = path.extname(filePath).toLowerCase();
+        let effectiveSeverity = rule.severity;
+        if (MARKDOWN_EXTENSIONS.has(ext) && isInsideMarkdownCodeBlock(content, offset)) {
+          effectiveSeverity = 'info';
+        }
 
         const finding: SecretFinding = {
           id: `${rule.id}-${filePath}-${lineIndex}-${col}`,
           ruleId: rule.id,
           ruleName: rule.name,
           description: rule.description,
-          severity: rule.severity,
+          severity: effectiveSeverity,
           category: rule.category,
           file: filePath,
           line: lineIndex + 1,
@@ -200,11 +247,12 @@ export async function scan(targetPath: string, options: ScanOptions = {}): Promi
   let filesScanned = 0;
   let filesSkipped = 0;
 
-  const TEST_PATH_RE = /(?:^|\/)(?:test|spec|__tests__|__mocks__|fixtures)\//i;
-
   for (const file of files) {
+    const relFile = (stat.isDirectory() ? path.relative(targetPath, file) : path.basename(file)).replace(/\\/g, '/');
+    const isTestFile = TEST_PATH_PATTERN.test(relFile) || TEST_FILE_PATTERN.test(relFile);
+
     // Skip test files if configured
-    if (skipTests && TEST_PATH_RE.test(file.replace(/\\/g, '/'))) {
+    if (skipTests && isTestFile) {
       filesSkipped++;
       continue;
     }
@@ -224,6 +272,14 @@ export async function scan(targetPath: string, options: ScanOptions = {}): Promi
       const filtered = allowlistMatcher
         ? result.findings.filter(f => !allowlistMatcher.isMatchAllowed(f.match))
         : result.findings;
+
+      // Downgrade severity for test files
+      if (isTestFile) {
+        for (const finding of filtered) {
+          finding.severity = SEVERITY_DOWNGRADE[finding.severity];
+        }
+      }
+
       allFindings.push(...filtered);
       filesScanned++;
     }
